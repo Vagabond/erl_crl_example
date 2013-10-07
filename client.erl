@@ -23,7 +23,7 @@ start() ->
                                                      end
                                              end, [], CRLDistPoints),
                           io:format("blah ~p~n", [Blah]),
-                          Res = (catch public_key:pkix_crls_validate(Cert, Blah, [{issuer_fun, )),
+                          Res = (catch public_key:pkix_crls_validate(Cert, Blah, [])),
                           io:format("crl validate result ~p~n", [Res]),
                           Res
                   end;
