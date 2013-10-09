@@ -6,7 +6,12 @@ compile: ebin
 	erlc -o ebin src/*.erl
 
 ebin:
-	mkdir ebin
+	@mkdir ebin
 
-check: compile
+CA:
+	@echo -n "Generating Certificates..."
+	@erl -pa ebin -noshell -run make_certs all /tmp $(shell pwd)/CA -s init stop
+	@echo " done"
+
+check: compile CA
 	@./check.sh

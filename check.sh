@@ -1,9 +1,4 @@
 #/bin/sh
-
-echo -n "Generating Certificates..."
-erl -pa ebin -noshell -run make_certs all /tmp $(pwd)/CA -s init stop
-echo " done"
-
 erl -pa ebin -noshell -s server -s init stop>/dev/null 2>&1 &
 pid=$!
 sleep 2
