@@ -28,7 +28,8 @@ AltNames = subject_alt_names(TBSCert#'OTPTBSCertificate'.extensions),
 Needs to be changed to:
 
 ```erlang
-AltNames = (pubkey_cert:select_extension(?'id-ce-subjectAltName', TBSCert#'OTPTBSCertificate'.extensions))#'Extension'.extnValue
+AltNames = (pubkey_cert:select_extension(?'id-ce-subjectAltName',
+ TBSCert#'OTPTBSCertificate'.extensions))#'Extension'.extnValue,
 ```
 
 Just drop the patched .beam into the ebin directory, and the test should start
