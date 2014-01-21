@@ -271,9 +271,19 @@ fetch_point(#'DistributionPoint'{distributionPoint={fullName, Names}}) ->
 %%
 fetch([]) ->
     not_available;
-fetch([{uniformResourceIdentifier, "file://"++_File}|Rest]) ->
-    io:format("fetching CRLs from file URIs is not supported~n"),
-    fetch(Rest);
+fetch([{uniformResourceIdentifier, "file://"++File}|Rest]) ->
+    io:format("getting CRL from ~p~n", [File]),
+    try file:read_file(File) of
+        {ok, Bin} ->
+            %% assume PEM
+            [{'CertificateList', DER, _}=CertList] = public_key:pem_decode(Bin),
+            {DER, public_key:pem_entry_decode(CertList)};
+        _ ->
+            fetch(Rest)
+    catch
+        _:_ ->
+            fetch(Rest)
+    end;
 fetch([{uniformResourceIdentifier, "http"++_=URL}|Rest]) ->
     io:format("getting CRL from ~p~n", [URL]),
     _ = inets:start(),

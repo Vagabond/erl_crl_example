@@ -18,15 +18,16 @@
 %%
 
 -module(make_certs).
+-compile([export_all]).
 
--export([all/1, all/2, rootCA/2, intermediateCA/3, enduser/3, revoke/3, gencrl/2, verify/3]).
+-export([all/1, all/2, rootCA/2, intermediateCA/3, endusers/3, enduser/3, revoke/3, gencrl/2, verify/3]).
 
 -record(dn, {commonName, 
-	     organizationalUnitName = "Erlang OTP",
-	     organizationName = "Ericsson AB",
-	     localityName = "Stockholm",
-	     countryName = "SE",
-	     emailAddress = "peter@erix.ericsson.se",
+	     organizationalUnitName = "Basho Engineering",
+	     organizationName = "Basho",
+	     localityName = "Cambridge, MA",
+	     countryName = "US",
+	     emailAddress = "riak@basho.com",
 	     default_bits = "2048"}).
 
 -define(OpenSSLCmd, "openssl").
@@ -39,8 +40,12 @@ all(DataDir, PrivDir) ->
     create_rnd(DataDir, PrivDir),			% For all requests
     rootCA(PrivDir, "erlangCA"),
     intermediateCA(PrivDir, "otpCA", "erlangCA"),
+    intermediateCA(PrivDir, "revokedCA", "erlangCA"),
+    intermediateCA(PrivDir, "bashoCA", "otpCA"),
     endusers(PrivDir, "otpCA", ["client", "server", "revoked"]),
     endusers(PrivDir, "erlangCA", ["localhost"]),
+    endusers(PrivDir, "revokedCA", ["blunderbuss"]),
+    endusers(PrivDir, "bashoCA", ["scuttlebutt"]),
     %% Create keycert files 
     SDir = filename:join([PrivDir, "server"]),
     SC = filename:join([SDir, "cert.pem"]),
@@ -61,7 +66,9 @@ all(DataDir, PrivDir) ->
     ok = verify(PrivDir, "otpCA", "client"),
     ok = verify(PrivDir, "otpCA", "revoked"),
     revoke(PrivDir, "otpCA", "revoked"),
+    revoke(PrivDir, "erlangCA", "revokedCA"),
     invalid = verify(PrivDir, "otpCA", "revoked"),
+    invalid = verify(PrivDir, "otpCA", "revokedCA"),
     remove_rnd(PrivDir).
 
 append_files(FileNames, ResultFileName) ->
@@ -78,7 +85,7 @@ do_append_files([F|Fs], RF) ->
 rootCA(Root, Name) ->
     create_ca_dir(Root, Name, ca_cnf(Name)),
     DN = #dn{commonName = Name},
-    create_self_signed_ecc_cert(Root, Name, req_cnf(DN)),
+    create_self_signed_cert(Root, Name, req_cnf(DN)),
     file:copy(filename:join([Root, Name, "cert.pem"]), filename:join([Root, Name, "cacerts.pem"])),
     gencrl(Root, Name).
 
@@ -113,7 +120,7 @@ enduser(Root, CA, User) ->
     file:write_file(CnfFile, req_cnf(DN)),
     KeyFile = filename:join([UsrRoot, "key.pem"]), 
     ReqFile =  filename:join([UsrRoot, "req.pem"]), 
-    create_ecc_req(Root, CnfFile, KeyFile, ReqFile),
+    create_req(Root, CnfFile, KeyFile, ReqFile),
     %create_req(Root, CnfFile, KeyFile, ReqFile),
     CertFileAllUsage =  filename:join([UsrRoot, "cert.pem"]),
     sign_req(Root, CA, "user_cert", ReqFile, CertFileAllUsage),
@@ -130,7 +137,7 @@ revoke(Root, CA, User) ->
 	   " -revoke ", UsrCert,
 	   " -crl_reason keyCompromise",
 	   " -config ", CACnfFile],
-    Env = [{"ROOTDIR", Root}], 
+    Env = [{"ROOTDIR", filename:absname(Root)}], 
     cmd(Cmd, Env),
     gencrl(Root, CA).
 
@@ -142,7 +149,7 @@ gencrl(Root, CA) ->
 	   " -crlhours 24",
 	   " -out ", CACRLFile,
 	   " -config ", CACnfFile],
-    Env = [{"ROOTDIR", Root}], 
+    Env = [{"ROOTDIR", filename:absname(Root)}], 
     cmd(Cmd, Env).
 
 verify(Root, CA, User) ->
@@ -154,7 +161,7 @@ verify(Root, CA, User) ->
 	   " -CRLfile ", CACRLFile, %% this is undocumented, but seems to work
 	   " -crl_check ",
 	   CertFile],
-    Env = [{"ROOTDIR", Root}],
+    Env = [{"ROOTDIR", filename:absname(Root)}],
     try cmd(Cmd, Env) catch
 	   exit:{eval_cmd, _, _} ->
 		invalid
@@ -173,7 +180,7 @@ create_self_signed_cert(Root, CAName, Cnf) ->
 	   " -keyout ", KeyFile,
 	   " -outform PEM",
 	   " -out ", CertFile], 
-    Env = [{"ROOTDIR", Root}],  
+    Env = [{"ROOTDIR", filename:absname(Root)}],  
     cmd(Cmd, Env).
 
 create_self_signed_ecc_cert(Root, CAName, Cnf) ->
@@ -187,7 +194,7 @@ create_self_signed_ecc_cert(Root, CAName, Cnf) ->
 	   " -name secp521r1 ",
 	   %" -name sect283k1 ",
 	   " -genkey "],
-    Env = [{"ROOTDIR", Root}], 
+    Env = [{"ROOTDIR", filename:absname(Root)}], 
     cmd(Cmd, Env),
 
     Cmd2 = [?OpenSSLCmd, " req"
@@ -217,7 +224,7 @@ create_req(Root, CnfFile, KeyFile, ReqFile) ->
 	   " -outform PEM ",
 	   " -keyout ", KeyFile, 
 	   " -out ", ReqFile], 
-    Env = [{"ROOTDIR", Root}], 
+    Env = [{"ROOTDIR", filename:absname(Root)}], 
     cmd(Cmd, Env).
     %fix_key_file(KeyFile).
 
@@ -227,7 +234,7 @@ create_ecc_req(Root, CnfFile, KeyFile, ReqFile) ->
 	   " -name secp521r1 ",
 	   %" -name sect283k1 ",
 	   " -genkey "],
-    Env = [{"ROOTDIR", Root}], 
+    Env = [{"ROOTDIR", filename:absname(Root)}], 
     cmd(Cmd, Env),
     Cmd2 = [?OpenSSLCmd, " req"
 	   " -new ",
@@ -248,7 +255,7 @@ sign_req(Root, CA, CertType, ReqFile, CertFile) ->
 	   " -extensions ", CertType,
 	   " -in ", ReqFile, 
 	   " -out ", CertFile],
-    Env = [{"ROOTDIR", Root}], 
+    Env = [{"ROOTDIR", filename:absname(Root)}], 
     cmd(Cmd, Env).
     
 %%
@@ -386,7 +393,7 @@ ca_cnf(CA) ->
 
      "[crl_section]\n"
      "URI.1=file://$ROOTDIR/",CA,"/crl.pem\n"
-     "URI.2=http://localhost:8000/ca.crl\n"
+     "URI.2=http://localhost:8000/",CA,"/crl.pem\n"
      "\n"
 
      "[user_cert_digital_signature_only]\n"
@@ -404,5 +411,7 @@ ca_cnf(CA) ->
      "subjectKeyIdentifier = hash\n"
      "authorityKeyIdentifier = keyid:always,issuer:always\n"
      "subjectAltName	= email:copy\n"
-     "issuerAltName	= issuer:copy\n"].
+     "issuerAltName	= issuer:copy\n"
+     "crlDistributionPoints=@crl_section\n"
+    ].
 
